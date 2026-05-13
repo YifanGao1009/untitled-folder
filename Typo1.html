@@ -1,0 +1,1616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sirens — Visualizing Language</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/addons/p5.sound.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/ml5@0.12.0/dist/ml5.min.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: #0a0a0a;
+      cursor: crosshair;
+      font-family: 'Gill Sans', 'Trebuchet MS', sans-serif;
+      margin: 0;
+      padding: 0;
+      overflow-y: scroll;
+      overflow-x: hidden;
+    }
+
+    #canvas {
+      display: block;
+      width: 100%;
+      height: auto;
+    }
+
+    #video {
+      display: none;
+    }
+
+    #hint {
+      position: fixed;
+      left: 24px;
+      bottom: 20px;
+      color: rgba(255,255,255,0.4);
+      font-family: 'Courier New', monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      z-index: 10;
+      pointer-events: none;
+      font-weight: 300;
+      white-space: pre-line;
+    }
+
+    #status {
+      position: fixed;
+      top: 20px;
+      right: 24px;
+      color: rgba(100, 200, 255, 0.6);
+      font-family: 'Courier New', monospace;
+      font-size: 10px;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+  </style>
+</head>
+<body>
+  <video id="video" width="640" height="480" autoplay></video>
+  <div id="status">
+    <div id="loading">SIRENS</div>
+  </div>
+  <div id="hint">
+ </div>
+
+<script>
+// ===============================
+// SIRENS — Interactive Poetry Visualization
+// Typography, hand detection, sound, and generative motion
+// ===============================
+
+const FULL_TEXT = `Sirens
+
+BRONZE BY GOLD HEARD THE HOOFIRONS, STEELYRINING IMPERthnthn thnthnthn.
+
+Chips, picking chips off rocky thumbnail, chips. Horrid! And gold flushed more.
+A husky fifenote blew.
+Blew. Blue bloom is on the
+Gold pinnacled hair.
+A jumping rose on satiny breasts of satin, rose of Castille.
+Trilling, trilling: I dolores.
+Peep! Who's in the... peepofgold?
+Tink cried to bronze in pity.
+And a call, pure, long and throbbing. Longindying call.
+Decoy. Soft word. But look! The bright stars fade. O rose! Notes chirruping answer. Castille. The morn is breaking.
+Jingle jingle jaunted jingling.
+Coin rang. Clock clacked.
+Avowal. Sonnez. I could. Rebound of garter. Not leave thee. Smack. La cloche! Thigh smack. Avowal. Warm. Sweetheart, goodbye!
+Jingle. Bloo.
+Boomed crashing chords. When love absorbs. War! War! The tympanum.
+A sail! A veil awave upon the waves.
+Lost. Throstle fluted. All is lost now.
+Horn. Hawhorn.
+When first he saw. Alas!
+Full tup. Full throb.
+Warbling. Ah, lure! Alluring.
+Martha! Come!
+Clapclop. Clipclap. Clappyclap.
+Goodgod henev erheard inall.
+Deaf bald Pat brought pad knife took up.
+A moonlight nightcall: far: far.
+I feel so sad. P. S. So lonely blooming.
+Listen!
+The spiked and winding cold seahorn. Have you the? Each and for other plash and silent roar.
+Pearls: when she. Liszt's rhapsodies. Hissss.
+You don't?
+Did not: no, no: believe: Lidlyd. With a cock with a carra.
+Black.
+Deepsounding. Do, Ben, do.
+Wait while you wait. Hee hee. Wait while you hee.
+But wait!
+Low in dark middle earth. Embedded ore.
+Naminedamine. All gone. All fallen.
+Tiny, her tremulous fernfoils of maidenhair.
+Amen! He gnashed in fury.
+Fro. To, fro. A baton cool protruding.
+Bronzelydia by Minagold.
+By bronze, by gold, in oceangreen of shadow. Bloom. Old Bloom.
+One rapped, one tapped with a carra, with a cock.
+Pray for him! Pray, good people!
+His gouty fingers nakkering.
+Big Benaben. Big Benben.
+Last rose Castille of summer left bloom I feel so sad alone. Pwee! Little wind piped wee.
+True men. Lid Ker Cow De and Doll. Ay, ay. Like you men. Will lift your tschink with tschunk.
+Fff! Oo!
+Where bronze from anear? Where gold from afar? Where hoofs?
+Rrrpr. Kraa. Kraandl.
+Then, not till then. My eppripfftaph. Be pfrwritt.
+Done.
+Begin!
+Bronze by gold, Miss Douce's head by Miss Kennedy's head, over the crossblind of the Ormond bar heard the viceregal hoofs go by, ringing steel.
+-- Is that her? asked Miss Kennedy.
+Miss Douce said yes, sitting with his ex, pearl grey and eau de Nil.
+-- Exquisite contrast, Miss Kennedy said.
+When all agog Miss Douce said eagerly:
+-- Look at the fellow in the tall silk.
+-- Who? Where? gold asked more eagerly.
+-- In the second carriage, Miss Douce's wet lips said, laughing in the sun. He's looking. Mind till I see.
+She darted, bronze, to the backmost corner, flattening her face against the pane in a halo of hurried breath.`;
+
+let wordElements = [];
+let particles = [];
+let rings = [];
+let handpose;
+let predictions = [];
+let videoStream;
+let backgroundGhosts = [];
+let scrollOffset = 0;
+
+// Sound synthesis
+let synth, synth2, synthSaw, bass, noiseSynth, reverb, delay;
+let soundStarted = false;
+let bgPulse = 0;
+let globalChaos = 0;
+let handX = null, handY = null;
+let prevHandX = null, prevHandY = null;
+let cameraInitialized = false;
+let initAttempts = 0;
+let handposeReady = false;
+let handSmoothing = 0.48; // Slightly lower sensitivity for smoother, less responsive tracking
+const CANVAS_HEIGHT_FACTOR = 2.2;
+let autoSpawnGhosts = true; // automatically spawn falling ghost words on load
+let fallingWords = [];
+let FALLING_BOTTOM = 0; // Will be set in setup()
+const DEBUG_MODE = false; // Enable for testing falling words - set to false for production
+let debugTriggerFrame = 0;
+const FALLING_GRAVITY = 0.15; // Slowed down from 0.35 for better visibility
+const FALLING_DRAG = 0.96; // Slight air resistance
+let autoSpawnInterval = 35; // frames between auto-spawns (reduced so spawns are continuous)
+let lastAutoSpawnFrame = 0;
+let currentPage = 1; // single combined page
+let pageTransition = 0; // 0=idle, 1=fading-out, 2=fading-in
+let transitionAlpha = 0;
+let nextPage = 0;
+const SONIC_WORD_RE = /(war|jingle|hissss|peep|bloom)/i;
+const VIEW_CULL_MARGIN = 220;
+const FAR_UPDATE_MARGIN = 620;
+const MAX_ATMO_WORDS_PER_FRAME = 160;
+const ATMOSPHERE_GRAIN_POINTS = 52;
+
+// Parse and create word layout with special handling for titles
+function parseWords() {
+  let lines = FULL_TEXT.split('\n').filter(p => p.trim().length > 0);
+  wordElements = [];
+  
+  let yOffset = height * 0.05 + 30;
+  const PAGE2_BODY_SHIFT_Y = -windowHeight * 0.22;
+  const MARGIN_LEFT = width * 0.06;
+  const MARGIN_RIGHT = width * 0.86;
+  const LINE_SPACING = 10;
+  const PARA_SPACING = 22;
+  const DIALOGUE_LEFT_MARGIN = width * 0.14;
+  const DIALOGUE_RIGHT_MARGIN = width * 0.88;
+  const DIALOGUE_MAX_WIDTH = DIALOGUE_RIGHT_MARGIN - DIALOGUE_LEFT_MARGIN;
+  const DIALOGUE_FONT_SIZE = 16;
+  const DIALOGUE_WORD_SPACING = 8;
+  const ONOM_SCALE = 1.08; // keep dialogue sentence rhythm readable
+  
+  // Detect dialogue start (Bronze by gold)
+  let dialogueStartIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim().startsWith('Bronze by gold')) {
+      dialogueStartIdx = i;
+      break;
+    }
+  }
+  
+  for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
+    let line = lines[lineIdx].trim();
+    let words = line.split(/\s+/).filter(w => w.length > 0);
+    
+    // Determine line type
+    let isTitle = lineIdx === 0; // "Sirens"
+    let isFirstLine = lineIdx === 1; // "BRONZE BY GOLD..."
+    let isDialogue = lineIdx >= dialogueStartIdx && dialogueStartIdx !== -1;
+    
+    if (isDialogue) {
+      // Layout dialogue as a justified paragraph block
+      let currentY = yOffset;
+      let lineWords = [];
+      let lineNaturalWidth = 0;
+      let isFirstDialogueLine = lineIdx === dialogueStartIdx;
+
+      let onomatopoeiaWords = ['Chips', 'Blew', 'Blue', 'Horrid', 'Peep', 'Tink', 'Decoy', 'Jingle', 'Coin', 
+                              'Clock', 'Avowal', 'Sonnez', 'Smack', 'La', 'cloche', 'Boom', 'Boomed', 'War', 
+                              'Horn', 'Warbling', 'Martha', 'Come', 'Clapclop', 'Clipclap', 'Goodgod', 'Deaf', 
+                              'Pat', 'moonlight', 'nightcall', 'Liszt', 'Hissss', 'Lidlyd', 'cock', 'carra', 
+                              'Black', 'Deepsounding', 'Ben', 'Naminedamine', 'Amen', 'Fro', 'Bronzelydia', 
+                              'Minagold', 'Rrrpr', 'Kraa', 'Kraandl', 'Fff', 'Oo', 'pfrwritt'];
+
+      if (isFirstDialogueLine && words.length > 0) {
+        let firstWord = words[0];
+        textSize(DIALOGUE_FONT_SIZE);
+        let renderY = currentY + PAGE2_BODY_SHIFT_Y;
+        wordElements.push({
+          word: firstWord,
+          x: DIALOGUE_LEFT_MARGIN,
+          y: renderY,
+          baseX: DIALOGUE_LEFT_MARGIN,
+          baseY: renderY,
+          swayX: random(0, TWO_PI),
+          swayY: random(0, TWO_PI),
+          size: DIALOGUE_FONT_SIZE,
+          weight: 3,
+          isBold: true,
+          isOnomatopoeia: true,
+          visualScale: 1.35,
+          colorType: 'dialogue',
+          isDialogue: true,
+          angle: 0,
+          scale: 1,
+          alpha: 235,
+          restAlpha: 235,
+          touchCounter: 0,
+          touched: false,
+          hue: 30,
+          soundType: 'default',
+          noAmbientSway: true
+        });
+        currentY += DIALOGUE_FONT_SIZE + 20;
+      }
+
+      let flushDialogueLine = (isLastLine = false) => {
+        if (lineWords.length === 0) {
+          return;
+        }
+
+        let gaps = max(0, lineWords.length - 1);
+        let extraSpace = max(0, DIALOGUE_MAX_WIDTH - lineNaturalWidth);
+        let gapSpacing = DIALOGUE_WORD_SPACING;
+
+        // Full justify non-last lines; keep last line naturally spaced for readability
+        if (!isLastLine && gaps > 0) {
+          gapSpacing += extraSpace / gaps;
+        }
+
+        let x = DIALOGUE_LEFT_MARGIN;
+
+        for (let j = 0; j < lineWords.length; j++) {
+          let item = lineWords[j];
+          let onom = item.isOnomatopoeia;
+          let restAlpha = onom ? 228 : 170; // keep dialogue sentence visible as one paragraph
+          let renderY = currentY + PAGE2_BODY_SHIFT_Y;
+          wordElements.push({
+            word: item.word,
+            x: x,
+            y: renderY,
+            baseX: x,
+            baseY: renderY,
+            swayX: random(0, TWO_PI),
+            swayY: random(0, TWO_PI),
+            size: DIALOGUE_FONT_SIZE,
+            weight: onom ? 3 : 1,
+            isBold: onom,
+            isOnomatopoeia: onom,
+            visualScale: onom ? ONOM_SCALE : 1,
+            colorType: 'dialogue',
+            isDialogue: true,
+            angle: 0,
+            scale: 1,
+            alpha: restAlpha,
+            restAlpha: restAlpha,
+            touchCounter: 0,
+            touched: false,
+            hue: onom ? 30 : 250,
+            soundType: 'default',
+            noAmbientSway: true // Disable sway for dialogue text
+          });
+
+          x += item.baseWidth + (j < lineWords.length - 1 ? gapSpacing : 0);
+        }
+
+        lineWords = [];
+        lineNaturalWidth = 0;
+        currentY += DIALOGUE_FONT_SIZE + 12; // add vertical breathing room
+      };
+
+      for (let i = isFirstDialogueLine ? 1 : 0; i < words.length; i++) {
+        let w = words[i];
+        let isOnomatopoeia = onomatopoeiaWords.some(ow => w.toLowerCase().includes(ow.toLowerCase()));
+        let scaleFactor = isOnomatopoeia ? ONOM_SCALE : 1;
+        textSize(DIALOGUE_FONT_SIZE);
+        // Use the rendered (scaled) width so layout reserves space for the bigger onom words.
+        let baseWidth = textWidth(w) * scaleFactor;
+        let nextWidth = lineWords.length === 0
+          ? baseWidth
+          : lineNaturalWidth + DIALOGUE_WORD_SPACING + baseWidth;
+
+        if (lineWords.length > 0 && nextWidth > DIALOGUE_MAX_WIDTH) {
+          flushDialogueLine(false);
+        }
+
+        lineWords.push({ word: w, baseWidth: baseWidth, isOnomatopoeia: isOnomatopoeia });
+        lineNaturalWidth = lineWords.reduce((sum, item, idx) => {
+          return sum + item.baseWidth + (idx > 0 ? DIALOGUE_WORD_SPACING : 0);
+        }, 0);
+      }
+
+      flushDialogueLine(true);
+      yOffset = currentY + PARA_SPACING;
+      
+    } else {
+      if (isFirstLine) {
+        // Orbit this sentence tightly around the Sirens title only
+        let orbitFontSize = 18;
+        let minWordGap = 28;
+
+        let titleWords = wordElements.filter(item => item.colorType === 'title');
+        let orbitCenterX = width * 0.5;
+        let orbitCenterY = windowHeight * 0.08;
+        let titleWidth = 280;
+
+        if (titleWords.length > 0) {
+          let titleText = titleWords.map(item => item.word).join(' ');
+          textSize(titleWords[0].size || 72);
+          titleWidth = max(180, textWidth(titleText));
+          orbitCenterX = titleWords[0].x + titleWidth * 0.5;
+          orbitCenterY = titleWords[0].y + (titleWords[0].size || 72) * 0.62;
+        }
+
+        let orbitRadiusX = constrain(titleWidth * 0.62, 160, 320);
+        let orbitRadiusY = constrain(orbitRadiusX * 0.24, 38, 78);
+
+        textSize(orbitFontSize);
+
+        // Distribute words by width along ellipse perimeter to prevent overlap
+        let ellipsePerimeter = TWO_PI * Math.sqrt((orbitRadiusX * orbitRadiusX + orbitRadiusY * orbitRadiusY) / 2);
+        let weightedWidths = words.map(w => textWidth(w) + minWordGap);
+        let widthSum = weightedWidths.reduce((sum, v) => sum + v, 0);
+
+        if (widthSum * 1.06 > ellipsePerimeter) {
+          let scaleUp = (widthSum * 1.06) / ellipsePerimeter;
+          orbitRadiusX *= scaleUp;
+          orbitRadiusY *= scaleUp;
+          ellipsePerimeter = TWO_PI * Math.sqrt((orbitRadiusX * orbitRadiusX + orbitRadiusY * orbitRadiusY) / 2);
+        }
+
+        let widthScale = widthSum > 0 ? ellipsePerimeter / widthSum : 1;
+        let run = 0;
+
+        for (let i = 0; i < words.length; i++) {
+          let scaledWidth = weightedWidths[i] * widthScale;
+          let orbitPhase = (run + scaledWidth * 0.5) / ellipsePerimeter;
+          run += scaledWidth;
+
+          wordElements.push({
+            word: words[i],
+            x: orbitCenterX,
+            y: orbitCenterY,
+            baseX: orbitCenterX,
+            baseY: orbitCenterY,
+            swayX: random(0, TWO_PI),
+            swayY: random(0, TWO_PI),
+            size: orbitFontSize,
+            weight: 3,
+            isBold: true,
+            colorType: 'bronze',
+            isDialogue: false,
+            angle: 0,
+            scale: 1,
+            alpha: 35,
+            touchCounter: 0,
+            touched: false,
+            hue: 210,
+            soundType: 'default',
+            noAmbientSway: true,
+            orbitTitle: true,
+            orbitPhase: orbitPhase,
+            orbitCenterX: orbitCenterX,
+            orbitCenterY: orbitCenterY,
+            orbitRadiusX: orbitRadiusX,
+            orbitRadiusY: orbitRadiusY
+          });
+        }
+
+        yOffset += 132;
+        continue;
+      }
+
+      // Non-dialogue text - original layout logic
+      let x = MARGIN_LEFT;
+      let y = yOffset;
+      
+      // Center title if this is the title line
+      if (isTitle) {
+        let titleWidth = 0;
+        for (let w of words) {
+          titleWidth += textWidth(w) + 90;
+        }
+        x = width * 0.5 - titleWidth * 0.5;
+      }
+      
+      // Define onomatopoeia words (should be bold)
+      let onomatopoeiaWords = ['Chips', 'Blew', 'Blue', 'Horrid', 'Peep', 'Tink', 'Decoy', 'Jingle', 'Coin', 'Clock', 
+                               'Avowal', 'Sonnez', 'Smack', 'La', 'cloche', 'Boom', 'Boomed', 'crashing', 'War', 'Horn', 
+                               'Hawhorn', 'Warbling', 'Martha', 'Come', 'Clapclop', 'Clipclap', 'Clappyclap', 'Goodgod', 
+                               'Deaf', 'Pat', 'moonlight', 'nightcall', 'Liszt', 'Hissss', 'Lidlyd', 'cock', 'carra', 
+                               'Black', 'Deepsounding', 'Ben', 'Naminedamine', 'Amen', 'Fro', 'Bronzelydia', 'Minagold', 
+                               'Rrrpr', 'Kraa', 'Kraandl', 'Fff', 'Oo', 'pfrwritt'];
+      
+      for (let i = 0; i < words.length; i++) {
+        let word = words[i];
+        let size = 14; // All non-title words same size
+        let weight = 1;
+        let isBold = false;
+        let colorType = 'normal';
+        
+        if (isTitle) {
+          // SIRENS - LARGEST
+          size = 190;
+          weight = 3;
+          isBold = true;
+          colorType = 'title';
+        } else if (isFirstLine) {
+          // BRONZE BY GOLD... - SECOND LARGEST
+          size = 34;
+          weight = 3;
+          isBold = true;
+          colorType = 'bronze';
+        } else {
+          // Check if it's an onomatopoeia word
+          let isOnomatopoeia = onomatopoeiaWords.some(ow => word.toLowerCase().includes(ow.toLowerCase()));
+          if (isOnomatopoeia) {
+            weight = 3;
+            isBold = true;
+            colorType = 'warm';
+          } else {
+            weight = 1;
+            isBold = false;
+            colorType = 'cool';
+          }
+        }
+
+        // Slightly enlarge only the two requested words
+        if (word === 'Chips,' || word === 'Begin!') {
+          size = 22;
+          weight = 3;
+          isBold = true;
+        }
+        
+        // Force Chips to its own line but keep following lines unchanged
+        if (word === 'Chips,') {
+          x = MARGIN_LEFT;
+        }
+        
+        textSize(size);
+        let wordSpacing = isTitle ? 90 : isFirstLine ? 15 : 25; // Reduced spacing for denser layout
+        let wordWidth = textWidth(word) + wordSpacing;
+        
+        // Line wrapping
+        if (x + wordWidth > MARGIN_RIGHT && x > MARGIN_LEFT) {
+          x = MARGIN_LEFT;
+          y += size + LINE_SPACING;
+        }
+        
+        // Adjust only Chips vertical position by -45, not affecting following lines
+        let chipVerticalShift = (word === 'Chips,') ? -45 : 0;
+        let renderY = (isTitle || isFirstLine) ? y + chipVerticalShift : (y + PAGE2_BODY_SHIFT_Y + chipVerticalShift);
+        wordElements.push({
+          word: word,
+          x: x,
+          y: renderY,
+          baseX: x,
+          baseY: renderY,
+          swayX: random(0, TWO_PI),
+          swayY: random(0, TWO_PI),
+          size: size,
+          weight: weight,
+          isBold: isBold,
+          colorType: colorType,
+          isDialogue: false,
+          angle: 0,
+          scale: 1,
+          alpha: isTitle ? 20 : 200,
+          touchCounter: 0,
+          touched: false,
+          hue: colorType === 'title' ? 220 : (colorType === 'bronze' ? 40 : 280),
+          soundType: 'default'
+        });
+        
+        x += wordWidth;
+      }
+      
+      yOffset = y + (isTitle ? 155 : isFirstLine ? 105 : PARA_SPACING);
+    }
+  }
+
+  // Reshape page-2 content into an atmospheric multi-depth text field.
+  applyAtmosphericTextLandscape();
+}
+
+function applyAtmosphericTextLandscape() {
+  let dialogueWords = wordElements.filter(w => w.isDialogue);
+  let contentWords = wordElements.filter(w => !(w.colorType === 'title' || w.orbitTitle || w.isDialogue));
+  if (contentWords.length === 0) return;
+
+  // Keep Begin! onward dialogue as one coherent paragraph block (no atmospheric scattering).
+  for (let d of dialogueWords) {
+    d.atmo = false;
+    d.layer = 2;
+    d.depth = 1;
+    d.blurPx = 0;
+    d.parallaxStrength = 0.18;
+  }
+
+  const viewportH = window.innerHeight || windowHeight;
+  const minY = viewportH * 0.16;
+  const maxY = height - viewportH * 0.24;
+
+  // Phrase-flow placement: keep nearby words connected like sentence fragments.
+  let cursorX = width * 0.10;
+  let cursorY = minY;
+  let laneWave = random(TWO_PI);
+
+  for (let i = 0; i < contentWords.length; i++) {
+    let word = contentWords[i];
+    let layerNoise = noise(i * 0.11 + 17.4);
+    let layer = layerNoise < 0.30 ? 0 : (layerNoise < 0.74 ? 1 : 2); // 0=bg, 1=mid, 2=fg
+    let depth = layer === 0 ? 0.38 : (layer === 1 ? 0.7 : 1.0);
+
+    let cleaned = word.word.replace(/[^a-zA-Z]/g, '');
+    let sonic = SONIC_WORD_RE.test(cleaned.toLowerCase());
+    let whisper = noise(i * 0.21 + 11.5) < 0.12;
+    let giant = sonic || noise(i * 0.16 + 73.0) > 0.9;
+
+    let baseSize = max(10, word.size || 14);
+    let scaleMul = layer === 0 ? random(0.72, 0.95) : (layer === 1 ? random(0.92, 1.2) : random(1.1, 1.45));
+    if (whisper) scaleMul *= random(0.58, 0.78);
+    if (giant) scaleMul *= random(1.28, 1.62);
+    let newSize = constrain(baseSize * scaleMul, 9, 78);
+
+    textSize(newSize);
+    let stepWidth = textWidth(word.word) + random(7, 15);
+    let hardWrap = cursorX + stepWidth > width * 0.9;
+    let softWrap = noise(i * 0.043 + 22.0) < 0.07;
+
+    if (hardWrap || softWrap) {
+      cursorX = width * random(0.08, 0.24);
+      cursorY += random(24, 52);
+      laneWave = random(TWO_PI);
+    }
+    if (cursorY > maxY) {
+      cursorY = minY + random(12, 60);
+    }
+
+    let x = cursorX + random(-3.5, 3.5);
+    let y = cursorY + sin(cursorX * 0.008 + laneWave) * random(4, 14) + random(-3, 3);
+
+    cursorX += stepWidth * random(0.94, 1.08);
+
+    let restAlpha = layer === 0 ? random(28, 62) : (layer === 1 ? random(92, 152) : random(170, 235));
+    let blurPx = layer === 0 ? random(0.8, 1.9) : (layer === 1 ? random(0.15, 0.7) : 0);
+
+    word.baseX = constrain(x, width * 0.04, width * 0.96);
+    word.baseY = constrain(y, minY, height * 0.98);
+    word.x = word.baseX;
+    word.y = word.baseY;
+    word.size = newSize;
+    word.baseScale = 1;
+    word.scale = 1;
+    word.restAlpha = restAlpha;
+    word.alpha = restAlpha;
+    word.layer = layer;
+    word.depth = depth;
+    word.blurPx = blurPx;
+    word.atmo = true;
+    word.isSonic = sonic;
+    word.wavePhase = random(TWO_PI);
+    word.waveSpeed = random(0.0022, 0.0065);
+    word.driftAmpX = random(0.45, 1.9) * depth;
+    word.driftAmpY = random(0.35, 1.5) * depth;
+    word.parallaxStrength = map(depth, 0.38, 1.0, 0.16, 0.82);
+    word.shadowJitter = random(0.35, 1.3);
+    word.weight = layer === 2 ? 3 : (layer === 1 ? 2 : 1);
+    word.isBold = layer === 2 || sonic;
+    word.noAmbientSway = false;
+  }
+  
+  // Initialize falling state for all words
+  for (let word of wordElements) {
+    word.isFalling = false;
+    word.fallVelocity = 0;
+    word.isResting = false;
+  }
+}
+
+function initHandDetection() {
+  setTimeout(requestCamera, 500);
+}
+
+async function requestCamera() {
+  try {
+    if (cameraInitialized) return;
+    if (initAttempts > 3) {
+      console.error('❌ 摄像头请求失败，已重试 3 次');
+      document.getElementById('loading').textContent = '❌ 摄像头初始化失败';
+      return;
+    }
+    
+    initAttempts++;
+    console.log(`📱 Step 2: Requesting camera access (attempt ${initAttempts})...`);
+    
+    let video = document.getElementById('video');
+    if (!video) {
+      console.error('❌ Video element not found!');
+      document.getElementById('loading').textContent = '❌ 视频元素加载失败';
+      return;
+    }
+    
+    console.log('📸 Calling getUserMedia...');
+    
+    // Important: Request camera with explicit constraints
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        facingMode: 'user'
+      },
+      audio: false
+    });
+    
+    console.log('✓ Camera stream received!');
+    
+    video.srcObject = stream;
+    videoStream = stream;
+    cameraInitialized = true;
+    
+    // Ensure video plays
+    video.play().then(() => {
+      console.log('✓ Video is playing');
+      initializeHandpose(video);
+      document.getElementById('loading').textContent = '✓ Ready · Move your fingers to touch the text →';
+    }).catch(err => {
+      console.error('❌ Video play error:', err);
+      document.getElementById('loading').textContent = '❌ 摄像头播放失败';
+    });
+    
+  } catch (err) {
+    console.error('❌ getUserMedia error:', err);
+    console.error('📋 Error details:', {
+      name: err.name,
+      message: err.message,
+      constraint: err.constraint
+    });
+    
+    let errorMsg = '❌ 摄像头错误';
+    if (err.name === 'NotAllowedError') {
+      errorMsg = '⚠️ 请在浏览器设置中允许摄像头访问';
+    } else if (err.name === 'NotFoundError') {
+      errorMsg = '❌ 未检测到摄像头';
+    } else if (err.name === 'SecurityError') {
+      errorMsg = '🔒 需要 HTTPS 安全连接';
+    } else if (err.name === 'OverconstrainedError') {
+      errorMsg = '❌ 摄像头不支持所需规格，重试...';
+      setTimeout(requestCameraSimple, 1000);
+      return;
+    }
+    
+    document.getElementById('loading').textContent = errorMsg;
+    
+    // Retry with simpler constraints
+    if (initAttempts < 3) {
+      console.log('🔄 将在 2 秒后重试...');
+      setTimeout(requestCameraSimple, 2000);
+    }
+  }
+}
+
+function initializeHandpose(video) {
+  if (handpose || !video) {
+    return;
+  }
+
+  console.log('🎯 Initializing ml5 handpose on video element...');
+  handpose = ml5.handpose(video, { flipHorizontal: true }, () => {
+    handposeReady = true;
+    console.log('✓ Handpose model ready');
+    document.getElementById('loading').textContent = '✓ Ready · Move your fingers to touch the text →';
+  });
+
+  handpose.on('hand', results => {
+    predictions = results;
+  });
+}
+
+async function requestCameraSimple() {
+  try {
+    if (cameraInitialized) return;
+    console.log('📱 尝试简化摄像头请求...');
+    
+    let video = document.getElementById('video');
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false
+    });
+    
+    console.log('✓ Camera stream acquired!');
+    video.srcObject = stream;
+    videoStream = stream;
+    cameraInitialized = true;
+    
+    video.play().then(() => {
+      console.log('✓ Video playing');
+      document.getElementById('loading').textContent = '✓ Ready · Move your fingers to touch the text →';
+    }).catch(err => console.error('❌ Play error:', err));
+    
+  } catch (err) {
+    console.error('❌ Simple camera request failed:', err);
+    document.getElementById('loading').textContent = '❌ 无法访问摄像头';
+  }
+}
+
+function setup() {
+  // Create a much taller canvas so the full text can scroll into view
+  createCanvas(windowWidth, windowHeight * CANVAS_HEIGHT_FACTOR);
+  textAlign(LEFT, TOP);
+  
+  // Set falling word bottom position
+  FALLING_BOTTOM = height * 0.85;
+  
+  // Initialize sound synthesis — wrapped in try/catch so a WebAudio failure
+  // never prevents the canvas from rendering.
+  try {
+    synth    = new p5.Oscillator('sine');
+    synth2   = new p5.Oscillator('triangle');
+    synthSaw = new p5.Oscillator('sawtooth');
+    bass     = new p5.Oscillator('sine');
+    noiseSynth = new p5.Noise('pink');
+    reverb   = new p5.Reverb();
+    delay    = new p5.Delay();
+
+    synth.start(); synth2.start(); synthSaw.start(); bass.start(); noiseSynth.start();
+    synth.amp(0); synth2.amp(0); synthSaw.amp(0); bass.amp(0); noiseSynth.amp(0);
+
+    reverb.process(synth, 3.5, 2.2);
+    reverb.process(synth2, 4.0, 3.0);
+    delay.process(synth, 0.28, 0.38, 1400);
+    soundStarted = false;
+  } catch (e) {
+    console.warn('Sound init failed (audio may be unavailable):', e);
+  }
+
+  parseWords();
+  initHandDetection();
+  // Initial auto-spawn so ghost words start falling immediately on load
+  if (autoSpawnGhosts) {
+    for (let i = 0; i < 6; i++) {
+      let x = random(width * 0.15, width * 0.85);
+      let y = random(-windowHeight * 0.2, windowHeight * 1.1);
+      spawnBackgroundGhostField(x, y);
+    }
+    lastAutoSpawnFrame = frameCount;
+  }
+}
+
+function draw() {
+  // Track scroll position
+  scrollOffset = window.scrollY;
+  
+  // Gradient background
+  background(8, 5, 20, 40);
+  
+  // Update dynamics
+  bgPulse = lerp(bgPulse, globalChaos, 0.04);
+  globalChaos *= 0.94;
+  
+  drawAtmosphere();
+  
+  // If camera not initialized after 3 seconds, try again
+  if (!cameraInitialized && frameCount === 180) {
+    console.log('🔄 Automatic retry: requesting camera...');
+    requestCamera();
+  }
+  
+  updateHandDetection();
+  updateWords();
+  updateBackgroundGhosts();
+  
+  // Debug mode: automatically trigger falling words on the main page
+  if (DEBUG_MODE && currentPage === 1 && frameCount % 60 === 0) {
+    let eligibleWords = wordElements.filter(w => !w.isFalling && !w.isDialogue && !w.orbitTitle && w.colorType !== 'title');
+    if (eligibleWords.length > 0) {
+      let randomWord = random(eligibleWords);
+      randomWord.isFalling = true;
+      randomWord.fallVelocity = 0;
+      fallingWords.push(randomWord);
+    }
+  }
+  
+  displayWords();
+  displayBackgroundGhosts();
+  displayRings();
+  displayMouseAura();
+
+  // Auto-spawn background ghost field periodically
+  if (autoSpawnGhosts && frameCount - lastAutoSpawnFrame > autoSpawnInterval) {
+    let x = random(width * 0.15, width * 0.85);
+    let viewportH = window.innerHeight || windowHeight;
+    let y = random(scrollOffset - viewportH * 0.2, scrollOffset + viewportH * 1.2);
+    spawnBackgroundGhostField(x, y);
+    lastAutoSpawnFrame = frameCount;
+  }
+}
+
+function updateHandDetection() {
+  // Only try to detect hands if camera and handpose are ready
+  if (!cameraInitialized || !handposeReady) {
+    return;
+  }
+  if (predictions.length > 0) {
+    let rightPred = null;
+
+    // 1. Trust the model's handedness label if it provides one
+    for (let p of predictions) {
+      let label = null;
+      if (p.handedness) {
+        label = typeof p.handedness === 'string' ? p.handedness : (p.handedness.label || null);
+      }
+      if (!label && p.multiHandedness && p.multiHandedness.length) {
+        try { label = p.multiHandedness[0].label; } catch (e) {}
+      }
+      if (label && (label === 'Right' || label === 'right')) {
+        rightPred = p;
+        break;
+      }
+    }
+
+
+    if (!rightPred) {
+      let bestX = -Infinity;
+      for (let p of predictions) {
+        let lm = p.landmarks || (p.keypoints && p.keypoints.map(k => [k.x, k.y, 0]));
+        if (!lm || lm.length < 9) continue;
+        let wristX = lm[0][0];
+        if (wristX > bestX) {
+          bestX = wristX;
+          rightPred = p;
+        }
+      }
+    }
+
+    if (!rightPred) {
+      handX = null; handY = null;
+      return;
+    }
+
+    // Only use the index finger point from the selected right-hand prediction
+    let indexFinger = null;
+    if (rightPred.landmarks && rightPred.landmarks.length > 8) {
+      indexFinger = rightPred.landmarks[8];
+    } else if (rightPred.keypoints && rightPred.keypoints.length > 8) {
+      indexFinger = rightPred.keypoints[8];
+      if (indexFinger && indexFinger.x !== undefined) {
+        indexFinger = [indexFinger.x, indexFinger.y, 0];
+      }
+    }
+
+    if (indexFinger) {
+      let videoElement = document.getElementById('video');
+      let sourceWidth = videoElement && videoElement.videoWidth ? videoElement.videoWidth : 640;
+      let sourceHeight = videoElement && videoElement.videoHeight ? videoElement.videoHeight : 480;
+
+      let targetHandX = map(indexFinger[0], 0, sourceWidth, 0, width);
+      // Map Y into current viewport then offset by scroll so lower sections remain trackable
+      let viewportH = window.innerHeight || windowHeight;
+      let targetHandY = map(indexFinger[1], 0, sourceHeight, 0, viewportH) + scrollOffset;
+
+      if (handX === null || handY === null) {
+        handX = targetHandX;
+        handY = targetHandY;
+      } else {
+        handX = lerp(handX, targetHandX, handSmoothing);
+        handY = lerp(handY, targetHandY, handSmoothing);
+      }
+
+      // Check which word is closest, then trigger only that one
+      let nearestWord = null;
+      let nearestDistance = 9999;
+      let viewTop = scrollOffset - 180;
+      let viewBottom = scrollOffset + (window.innerHeight || windowHeight) + 180;
+
+      for (let word of wordElements) {
+        if (word.y < viewTop || word.y > viewBottom) {
+          continue;
+        }
+        let d = dist(handX, handY, word.x, word.y);
+        if (d < 200 && d < nearestDistance) { // Larger detection radius for better coverage
+          nearestDistance = d;
+          nearestWord = word;
+        }
+      }
+
+      if (nearestWord) {
+        // Avoid repeated sound triggers - less frequent to reduce sensitivity
+        if (nearestWord.lastTriggerFrame === undefined || frameCount - nearestWord.lastTriggerFrame > 12) {
+          nearestWord.touchCounter = 48;
+          triggerWordSound(nearestWord);
+          nearestWord.lastTriggerFrame = frameCount;
+          
+          // Mark word to fall when on page 2
+          if (currentPage === 1 && !nearestWord.isFalling && !nearestWord.isDialogue && !nearestWord.orbitTitle && nearestWord.colorType !== 'title') {
+            nearestWord.isFalling = true;
+            nearestWord.fallVelocity = 0;
+            fallingWords.push(nearestWord);
+          }
+        } else {
+          nearestWord.touchCounter = 48; // Keep yellow highlight active longer
+        }
+      }
+    }
+  }
+}
+
+function updateFallingWords() {
+  for (let i = fallingWords.length - 1; i >= 0; i--) {
+    let word = fallingWords[i];
+    
+    // Skip update if already resting
+    if (word.isResting) {
+      continue;
+    }
+    
+    // Apply gravity with drag
+    word.fallVelocity += FALLING_GRAVITY;
+    word.fallVelocity *= FALLING_DRAG;
+    word.y += word.fallVelocity;
+    
+    // Add slight horizontal drift
+    word.x += sin(frameCount * 0.02 + i) * 0.5;
+    
+    // Check collision with bottom
+    let isResting = false;
+    if (word.y >= FALLING_BOTTOM) {
+      word.y = FALLING_BOTTOM;
+      word.fallVelocity = 0;
+      isResting = true;
+    } else {
+      // Check collision with other resting words - stack on top of them
+      for (let j = 0; j < fallingWords.length; j++) {
+        if (i !== j && fallingWords[j].isResting) {
+          let other = fallingWords[j];
+          let dx = word.x - other.x;
+          let dy = word.y - other.y;
+          let minDist = (word.size + other.size) * 0.6;
+          let dist = sqrt(dx * dx + dy * dy);
+          
+          if (dist < minDist) {
+            // Stack on top of the other word
+            word.y = other.y - word.size - 8;
+            word.x = other.x + random(-8, 8); // More randomness for natural pile
+            word.fallVelocity = 0;
+            isResting = true;
+            break;
+          }
+        }
+      }
+    }
+    
+    word.isResting = isResting;
+    word.alpha = 255;
+    word.scale = 1;
+    
+    // Words never disappear - they stay in the pile permanently
+  }
+}
+
+function updateWords() {
+  let viewportH = window.innerHeight || windowHeight;
+  let pointerDX = (mouseX - width * 0.5) / max(1, width);
+  let pointerDY = (mouseY - viewportH * 0.5) / max(1, viewportH);
+  let viewTop = scrollOffset - VIEW_CULL_MARGIN;
+  let viewBottom = scrollOffset + viewportH + VIEW_CULL_MARGIN;
+
+  // Update falling words physics
+  updateFallingWords();
+
+  for (let word of wordElements) {
+    if (word.isFalling) {
+      // Falling word: skip normal animation
+      continue;
+    }
+    if (word.orbitTitle) {
+      // Lighter mobius-like motion for smoother rendering
+      let spin = frameCount * 0.0042;
+      let theta = TWO_PI * word.orbitPhase + spin;
+      let twist = sin(theta * 1.4 + frameCount * 0.008);
+
+      word.x = word.orbitCenterX + cos(theta) * word.orbitRadiusX;
+      word.y = word.orbitCenterY + sin(theta) * word.orbitRadiusY;
+
+      // Tangent angle with reduced twist amplitude
+      let tangent = atan2(cos(theta) * word.orbitRadiusY, -sin(theta) * word.orbitRadiusX);
+      word.angle = tangent + twist * 0.16;
+
+      if (word.touchCounter === 0) {
+        word.scale = 0.92 + 0.06 * abs(twist);
+      }
+    }
+
+    if (word.atmo) {
+      // Skip expensive updates for far-off words and update distant layer less frequently.
+      if (word.baseY < viewTop - FAR_UPDATE_MARGIN || word.baseY > viewBottom + FAR_UPDATE_MARGIN) {
+        word.x = word.baseX;
+        word.y = word.baseY;
+        word.scale = lerp(word.scale, 1, 0.08);
+        word.alpha = lerp(word.alpha, word.restAlpha, 0.05);
+        if (word.touchCounter > 0) word.touchCounter--;
+        continue;
+      }
+      if (word.layer === 0 && frameCount % 2 === 1) {
+        continue;
+      }
+
+      let t = frameCount * word.waveSpeed + word.wavePhase;
+      let waveX = sin(t * 1.7 + word.baseY * 0.007) * word.driftAmpX;
+      let waveY = cos(t * 1.15 + word.baseX * 0.004) * word.driftAmpY;
+      let microX = sin(frameCount * 0.023 + word.swayX) * 0.35;
+      let microY = cos(frameCount * 0.019 + word.swayY) * 0.25;
+      let parallaxX = pointerDX * 34 * word.parallaxStrength;
+      let parallaxY = pointerDY * 20 * word.parallaxStrength;
+
+      word.x = word.baseX + waveX + microX + parallaxX;
+      word.y = word.baseY + waveY + microY + parallaxY;
+
+      if (word.touchCounter > 0) {
+        word.touchCounter--;
+        word.alpha = 255;
+        word.scale = lerp(word.scale, 1.48, 0.22);
+      } else {
+        word.alpha = lerp(word.alpha, word.restAlpha, 0.07);
+        word.scale = lerp(word.scale, 1, 0.08);
+      }
+
+      if (word.isSonic) {
+        let sonicPulse = 1 + sin(frameCount * 0.085 + word.wavePhase * 2.1) * 0.08;
+        word.scale *= sonicPulse;
+      }
+
+      continue;
+    }
+
+    // Apply ambient sway only to non-dialogue text
+    let ambientDrift = word.noAmbientSway ? 0 : (0.35 + word.weight * 0.03);
+    let swayOffsetX = word.noAmbientSway ? 0 : sin(frameCount * 0.004 + word.swayX) * ambientDrift;
+    let swayOffsetY = word.noAmbientSway ? 0 : cos(frameCount * 0.0035 + word.swayY) * ambientDrift * 0.6;
+
+    if (word.touchCounter > 0) {
+      word.touchCounter--;
+      word.alpha = 255;
+      word.hue = 52; // Bright yellow/gold
+      word.scale = lerp(word.scale, 1.62, 0.24);
+      if (!word.orbitTitle) {
+        word.angle = lerp(word.angle, 0.02, 0.08);
+      }
+    } else {
+      let targetAlpha = word.colorType === 'title' ? 20 : 200;
+      word.alpha = lerp(word.alpha, targetAlpha, 0.08);
+      // Reset hue based on type
+      if (word.colorType === 'title') word.hue = 220;
+      else if (word.colorType === 'bronze') word.hue = 38;
+      else if (word.colorType === 'warm') word.hue = 34;
+      else if (word.colorType === 'cool') word.hue = 280;
+      else word.hue = 280;
+      if (!word.orbitTitle) {
+        word.scale = lerp(word.scale, 1, 0.08);
+        word.angle = lerp(word.angle, 0, 0.06);
+      }
+    }
+
+    if (!word.orbitTitle) {
+      word.x = word.baseX + swayOffsetX;
+      word.y = word.baseY + swayOffsetY;
+    }
+  }
+}
+
+function displayWords() {
+  let viewportH = window.innerHeight || windowHeight;
+  let viewTop = scrollOffset - VIEW_CULL_MARGIN;
+  let viewBottom = scrollOffset + viewportH + VIEW_CULL_MARGIN;
+
+  // Draw big title first so it stays in the far background layer.
+  for (let word of wordElements) {
+    if (word.colorType !== 'title') continue;
+    if (!word.isFalling && (word.y < viewTop || word.y > viewBottom)) continue;
+    if (word.isFalling && word.y < viewTop) continue;
+    displayWord(word);
+  }
+
+  let atmoDrawn = 0;
+  for (let word of wordElements) {
+    if (word.colorType === 'title') continue;
+    // For falling words, don't apply viewport culling so pile is always visible
+    if (!word.isFalling && (word.y < viewTop || word.y > viewBottom)) continue;
+    
+    // For falling words that are off-screen upward, still skip
+    if (word.isFalling && word.y < viewTop) continue;
+
+    if (word.atmo && !word.isFalling) {
+      if (word.layer === 0 && frameCount % 2 === 1) continue;
+      if (word.layer === 1 && frameCount % 3 === 2) continue;
+      if (atmoDrawn > MAX_ATMO_WORDS_PER_FRAME && word.layer !== 2 && !word.isSonic) continue;
+      atmoDrawn++;
+    }
+
+    displayWord(word);
+  }
+}
+
+function displayWord(word) {
+    push();
+
+    if (word.atmo) {
+      translate(word.x, word.y);
+      textAlign(LEFT, TOP);
+      rotate(sin(frameCount * 0.003 + word.wavePhase) * 0.04 * word.parallaxStrength);
+      scale(word.scale);
+      textSize(word.size);
+      textStyle(word.isBold ? BOLD : NORMAL);
+      textFont('Georgia, serif');
+      noStroke();
+
+      // Palette by depth: warm foreground, blue-gray distance, cyan accents, subtle purple shadows.
+      let r = word.layer === 2 ? 236 : (word.layer === 1 ? 170 : 112);
+      let g = word.layer === 2 ? 228 : (word.layer === 1 ? 188 : 136);
+      let b = word.layer === 2 ? 214 : (word.layer === 1 ? 210 : 166);
+
+      if (word.isSonic) {
+        r = 150;
+        g = 220;
+        b = 228;
+      }
+
+      let shadowA = word.alpha * (word.layer === 2 ? 0.32 : 0.18);
+      fill(78, 66, 110, shadowA);
+      text(word.word, word.shadowJitter, word.shadowJitter * 0.8);
+
+      if (word.blurPx > 0.1) {
+        // Lightweight fake blur: soft offset copies instead of expensive canvas filter.
+        fill(r, g, b, word.alpha * 0.2);
+        text(word.word, 0.9, 0.5);
+        text(word.word, -0.8, 0.4);
+      }
+
+      fill(r, g, b, word.alpha);
+      text(word.word, 0, 0);
+
+      if (word.isSonic) {
+        let ripple = 8 + 6 * abs(sin(frameCount * 0.06 + word.wavePhase));
+        noFill();
+        stroke(132, 226, 238, word.alpha * 0.28);
+        strokeWeight(1);
+        ellipse(0, word.size * 0.45, ripple * 2.1, ripple * 0.85);
+      }
+
+      pop();
+      return;
+    }
+    
+    if (word.isDialogue) {
+      // Dialogue section — onomatopoeia pop, surrounding words recede
+      translate(word.x, word.y);
+      textAlign(LEFT, TOP);
+      scale(word.visualScale || 1);
+
+      let isOnom = word.isOnomatopoeia;
+      let saturation = isOnom ? 80 : 18;
+      let brightness = isOnom ? 240 : 175;
+      let hue;
+      if (word.touchCounter > 0) hue = 52;
+      else hue = isOnom ? 30 : 250;
+      let c = hsb(hue, saturation, brightness, word.alpha);
+
+      noStroke();
+      textSize(word.size);
+      textStyle(isOnom ? BOLD : NORMAL);
+      textFont('Georgia, serif');
+
+      // Shadow only for onomatopoeia so they "pop"
+      if (isOnom) {
+        fill(0, word.alpha * 0.22);
+        text(word.word, 1.2, 1.2);
+      }
+
+      // Main text
+      fill(c);
+      text(word.word, 0, 0);
+
+    } else {
+      // Regular section - left-aligned with animation
+      translate(word.x, word.y);
+      textAlign(LEFT, TOP);
+      rotate(word.angle * 0.06);
+      scale(word.scale);
+      
+      // Determine saturation and brightness based on color type
+      let saturation = 55 + word.weight * 12;
+      let brightness = 215;
+      
+      // Special colors for different word types
+      if (word.colorType === 'title') {
+        // Sirens - visible but subtle blue background title
+        word.hue = 220;
+        saturation = 42;
+        brightness = 118;
+      } else if (word.colorType === 'bronze') {
+        // BRONZE BY GOLD line - warm bronze/orange
+        if (word.touchCounter === 0) {
+          word.hue = 35; // Bronze/warm
+        }
+        saturation = 85;
+      } else if (word.colorType === 'warm') {
+        // Other caps - warm colors
+        if (word.touchCounter === 0) {
+          word.hue = random(25, 45); // Warm palette
+        }
+        saturation = 70;
+      } else if (word.colorType === 'cool') {
+        // Regular caps - cooler tones
+        if (word.touchCounter === 0) {
+          word.hue = random(240, 320); // Cool palette
+        }
+        saturation = 65;
+      } else if (word.colorType === 'dialogue') {
+        // Dialogue text - subtle cool tone
+        if (word.touchCounter === 0) {
+          word.hue = 260;
+        }
+        saturation = 50;
+        brightness = 195;
+      }
+      
+      
+      let c = hsb(word.hue, saturation, brightness, word.alpha);
+      
+      // Shadow
+      fill(0, word.alpha * 0.18);
+      noStroke();
+      textSize(word.size);
+      textStyle(word.weight > 1 ? BOLD : NORMAL);
+      textFont('Georgia, serif');
+      text(word.word, 1.5, 1.5);
+      
+      // Main text
+      fill(c);
+      text(word.word, 0, 0);
+    }
+    
+    pop();
+}
+
+function displayBackgroundGhosts() {
+  for (let ghost of backgroundGhosts) {
+    push();
+    translate(ghost.x, ghost.y);
+    rotate(ghost.rotation);
+    scale(ghost.scale);
+    
+    fill(205, 205, 205, ghost.alpha);
+    noStroke();
+    textSize(ghost.size);
+    textStyle(NORMAL);
+    textFont('Georgia, serif');
+    text(ghost.word, 0, 0);
+    pop();
+  }
+}
+
+function updateBackgroundGhosts() {
+  for (let i = backgroundGhosts.length - 1; i >= 0; i--) {
+    let ghost = backgroundGhosts[i];
+    ghost.y += ghost.speedY;
+    ghost.x += ghost.speedX;
+    ghost.rotation += ghost.spin;
+    ghost.alpha -= ghost.fade;
+    
+    if (ghost.alpha <= 0 || ghost.y > height + 80) {
+      backgroundGhosts.splice(i, 1);
+    }
+  }
+}
+
+function displayRings() {
+  for (let i = rings.length - 1; i >= 0; i--) {
+    rings[i].update();
+    rings[i].display();
+    if (rings[i].dead()) rings.splice(i, 1);
+  }
+}
+
+function displayMouseAura() {
+  push();
+  let adjustedMouseY = mouseY + scrollOffset;
+
+  // Non-circular cursor aura (crosshair only)
+  stroke(100, 200, 255, 70);
+  strokeWeight(1.4);
+  line(mouseX - 18, adjustedMouseY, mouseX + 18, adjustedMouseY);
+  line(mouseX, adjustedMouseY - 18, mouseX, adjustedMouseY + 18);
+
+  stroke(100, 200, 255, 35);
+  strokeWeight(1);
+  line(mouseX - 30, adjustedMouseY, mouseX + 30, adjustedMouseY);
+  line(mouseX, adjustedMouseY - 30, mouseX, adjustedMouseY + 30);
+  pop();
+  
+  // Hand finger indicator removed — touched words light up directly instead.
+}
+
+function drawAtmosphere() {
+  push();
+  let viewportH = window.innerHeight || windowHeight;
+  let viewTop = scrollOffset;
+
+  if (currentPage === 1) {
+    // Subtle grain/noise veil
+    strokeWeight(1);
+    for (let i = 0; i < ATMOSPHERE_GRAIN_POINTS; i++) {
+      let gx = random(width);
+      let gy = random(scrollOffset, scrollOffset + viewportH);
+      stroke(150, 168, 196, random(3, 10));
+      point(gx, gy);
+    }
+
+    pop();
+    return;
+  }
+
+  // Page 0: very light grain only, no horizontal bars.
+  strokeWeight(1);
+  for (let i = 0; i < 20; i++) {
+    let gx = random(width);
+    let gy = random(viewTop, viewTop + viewportH);
+    stroke(120, 140, 175, random(2, 6));
+    point(gx, gy);
+  }
+  
+  pop();
+}
+
+function triggerWordSound(word) {
+  startSoundOnce();
+  let soundType = determineSoundType(word);
+  
+  // THREE DIFFERENT SOUND EFFECTS
+  if (soundType === 'type1_deep') {
+    // Type 1: Deep bass sound - for dark/heavy words
+    playDeepBass(word.size);
+  } else if (soundType === 'type2_high') {
+    // Type 2: High pitched bright sound - for light/airy words
+    playHighChime(word.size);
+  } else if (soundType === 'type3_texture') {
+    // Type 3: Textured noise sound - for percussive/rough words
+    playTextureSound(word.size);
+  } else {
+    // Default: melodic
+    playMelodic(word.size);
+  }
+  
+  rings.push(new SoundRing(word.x, word.y, word.word));
+  globalChaos = 0.8;
+}
+
+function determineSoundType(word) {
+  let lower = word.word.toLowerCase();
+  
+  // Type 1: Deep bass
+  if (lower.match(/boom|war|black|drum|bell|deep|dark|low|bronze|gold|thud|boom/)) {
+    return 'type1_deep';
+  } 
+  // Type 2: High chime
+  else if (lower.match(/jingle|tink|peep|ring|click|chime|ting|high|light|bright|silver/)) {
+    return 'type2_high';
+  } 
+  // Type 3: Texture
+  else if (lower.match(/hiss|ssss|shh|rrr|kraa|noise|friction|scratch|rasp|harsh|fff|oo/)) {
+    return 'type3_texture';
+  } 
+  else {
+    return 'default';
+  }
+}
+
+// Pentatonic scale notes (Hz) for musical mapping
+const PENTATONIC = [130.8, 146.8, 164.8, 196.0, 220.0, 261.6, 293.7, 329.6, 392.0, 440.0, 523.3, 587.3, 659.3];
+
+function snapToPentatonic(freq) {
+  return PENTATONIC.reduce((prev, curr) => Math.abs(curr - freq) < Math.abs(prev - freq) ? curr : prev);
+}
+
+function playDeepBass(wordSize) {
+  let rawFreq = map(wordSize, 14, 140, 55, 180);
+  let freq = snapToPentatonic(constrain(rawFreq, 55, 180));
+  bass.freq(freq);
+  bass.amp(0.4, 0.06);
+  bass.amp(0, 1.5);
+  // Sub harmonic with sawtooth for weight
+  synthSaw.freq(freq * 0.5);
+  synthSaw.amp(0.08, 0.05);
+  synthSaw.amp(0, 0.4);
+}
+
+function playHighChime(wordSize) {
+  let rawFreq = map(wordSize, 14, 140, 880, 2200);
+  let freq = snapToPentatonic(constrain(rawFreq, 660, 2200));
+  // Triangle gives a softer, bell-like chime
+  synth2.freq(freq);
+  synth2.amp(0.22, 0.01);
+  synth2.amp(0, 0.55);
+  // Quiet octave below for body
+  synth.freq(freq * 0.5);
+  synth.amp(0.08, 0.02);
+  synth.amp(0, 0.35);
+}
+
+function playTextureSound(wordSize) {
+  // Sawtooth burst through filter-like amp shaping
+  let freq = random(200, 600);
+  synthSaw.freq(freq);
+  synthSaw.amp(0.18, 0.01);
+  synthSaw.amp(0, 0.18);
+  // Pink noise swell
+  noiseSynth.amp(0.32, 0.03);
+  noiseSynth.amp(0, 0.5);
+  // Low thump
+  bass.freq(random(45, 90));
+  bass.amp(0.18, 0.04);
+  bass.amp(0, 0.25);
+}
+
+function playMelodic(wordSize) {
+  let rawFreq = map(wordSize, 14, 140, 220, 880);
+  let freq = snapToPentatonic(constrain(rawFreq, 196, 880));
+  // Sine + triangle for warm harmony
+  synth.freq(freq);
+  synth2.freq(freq * 1.5); // Perfect fifth above
+  bass.freq(freq * 0.5);
+  synth.amp(0.16, 0.03);
+  synth2.amp(0.10, 0.04);
+  bass.amp(0.13, 0.04);
+  synth.amp(0, 0.75);
+  synth2.amp(0, 0.9);
+  bass.amp(0, 1.0);
+}
+
+function startSoundOnce() {
+  if (!soundStarted) {
+    userStartAudio();
+    soundStarted = true;
+  }
+}
+
+class SoundRing {
+  constructor(x, y, word) {
+    this.x = x;
+    this.y = y;
+    this.word = word;
+    this.r = 5;
+    this.a = 200;
+    this.spin = random(-0.08, 0.08);
+  }
+  
+  update() {
+    this.r += 6;
+    this.a -= 4;
+  }
+  
+  display() {
+    push();
+    translate(this.x, this.y);
+    rotate(frameCount * this.spin);
+    
+    noFill();
+    stroke(200, 220, 255, this.a);
+    strokeWeight(1.5);
+    ellipse(0, 0, this.r, this.r * 0.7);
+    
+    fill(200, 220, 255, this.a * 0.6);
+    noStroke();
+    textSize(12 + this.r * 0.03);
+    textFont('Georgia, serif');
+    text(this.word.substring(0, 3), 0, -this.r * 0.4);
+    
+    pop();
+  }
+  
+  dead() {
+    return this.a <= 0;
+  }
+}
+
+function hsb(h, s, b, a = 255) {
+  return color(`hsla(${h}, ${s}%, ${b}%, ${a / 255})`);
+}
+
+function mousePressed() {
+  let adjustedMouseY = mouseY + scrollOffset;
+  let clickedWord = null;
+  for (let word of wordElements) {
+    if (dist(mouseX, adjustedMouseY, word.x, word.y) < word.size + 8) {
+      clickedWord = word;
+      break;
+    }
+  }
+  
+  // Title stays on the same page; click only triggers its sound/interaction.
+  if (clickedWord && clickedWord.colorType === 'title') {
+    triggerWordSound(clickedWord);
+    return false;
+  }
+  
+  if (clickedWord) {
+    triggerWordSound(clickedWord);
+  }
+
+  if (!clickedWord) {
+    spawnBackgroundGhostField(mouseX, adjustedMouseY);
+  }
+
+  return false;
+}
+
+function spawnBackgroundGhostField(x, y) {
+  if (wordElements.length === 0) {
+    return;
+  }
+
+  let sourceWords = wordElements.map(item => item.word);
+  let count = min(24, sourceWords.length);
+
+  for (let i = 0; i < count; i++) {
+    let sourceWord = random(sourceWords);
+    let baseWord = wordElements[floor(random(wordElements.length))];
+    backgroundGhosts.push({
+      word: sourceWord,
+      x: random(width * 0.04, width * 0.96),
+      y: random(-height * 0.25, height * 0.75),
+      size: max(8, (baseWord ? baseWord.size : 12) * random(0.45, 0.7)),
+      alpha: random(28, 62),
+      speedX: random(-0.15, 0.15),
+      speedY: random(0.35, 0.95),
+      spin: random(-0.004, 0.004),
+      rotation: random(-0.06, 0.06),
+      scale: random(0.6, 0.86),
+      fade: random(0.55, 1.0)
+    });
+  }
+
+  if (backgroundGhosts.length > 90) {
+    backgroundGhosts.splice(0, backgroundGhosts.length - 90);
+  }
+}
+
+function keyPressed() {
+  if (key === ' ') {
+    let randomWord = random(wordElements);
+    triggerWordSound(randomWord);
+    globalChaos = 1.2;
+  }
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight * CANVAS_HEIGHT_FACTOR);
+  parseWords();
+}
+</script>
+</body>
+</html>
